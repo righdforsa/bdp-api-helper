@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.9
+ * Version: 1.1.10
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -282,7 +282,7 @@ function bdp_api_helper_update_listing( $request ) {
         if(in_array( $key, REGION_KEYS, true )) {
             // confirm the region key exists
             if (find_region_term_id($value) === null) {
-                error_log( "BDP API Helper: Unknown region value during update: {$key}" );
+                error_log( "BDP API Helper: Unknown region value during update: {$key} {$value}" );
                 return new WP_Error( 'invalid_region', "{$key} region {$value} not found.", array( 'status' => 400 ) );
             }
 
@@ -453,6 +453,8 @@ function find_region_term_id($incoming_region_name) {
         $region_name = $alias_map[strtolower($region_name)];
     }
 
+	error_log("bdp-api-helper: find_region_term_id: " . json_encode($region_lookup));
+        $region_name = $alias_map[strtolower($region_name)];
     return $region_lookup[$region_name] ?? null;
 }
 
