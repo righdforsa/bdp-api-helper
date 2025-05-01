@@ -403,7 +403,7 @@ function bdp_api_helper_get_field_id_by_shortname( $shortname ) {
 }
 
 // cache regions in a global so we can look them up without multiple DB hits
-function preload_regions_lookup() {
+function preload_regions_lookup_data() {
     $terms = get_terms(array(
         'taxonomy' => 'wpbdp_region',
         'hide_empty' => false,
@@ -412,13 +412,14 @@ function preload_regions_lookup() {
 
     $lookup = array();
     foreach ( $terms as $term ) {
+        error_log("bdp_api_helper: preload_regions_lookup_data term: " . print_r($term, true));
         $lookup[ strtolower( $term->name ) ] = $term->term_id;
     }
 
     error_log("bdp-api-helper: preloaded " . count($lookup) . " region terms");
     return $lookup;
 }
-$region_lookup = preload_regions_lookup();
+$region_lookup = preload_regions_lookup_data();
 
 // lookup region by name to confirm it exists
 function find_region_term_id($region_lookup, $incoming_region_name) {
