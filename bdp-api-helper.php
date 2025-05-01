@@ -408,7 +408,7 @@ function bdp_api_helper_get_field_id_by_shortname( $shortname ) {
 function preload_regions_lookup_data() {
     // get the bdp region terms
     $terms = get_terms(array(
-        'taxonomy' => 'wpbdp-region',
+        'taxonomy' => 'wpbdm-region',
         'hide_empty' => false,
         'fields' => 'all', // or 'id=>name' if you want to be fancy
     ));
