@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.1
+ * Version: 1.1.2
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -408,13 +408,13 @@ function bdp_api_helper_get_field_id_by_shortname( $shortname ) {
 function preload_regions_lookup_data() {
     // get the bdp region terms
     $terms = get_terms(array(
-        'taxonomy' => 'wpbdp_region',
+        'taxonomy' => 'wpbdp-region',
         'hide_empty' => false,
         'fields' => 'all', // or 'id=>name' if you want to be fancy
     ));
 
     if ( is_wp_error($terms) ) {
-        error_log("bdp-api-helper: Failed to load regions taxonomy. Error: " . print_r($terms->get_error_messages(), true));
+        error_log("bdp-api-helper: Failed to load regions taxonomy. Error: " . json_encode($terms->get_error_messages()));
         return array(); // Return empty array so downstream logic doesn't break
     }
 
