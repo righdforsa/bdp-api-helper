@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.7
+ * Version: 1.1.8
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -414,7 +414,6 @@ function preload_regions_lookup_data() {
         'hide_empty' => false,
         'fields' => 'all', // or 'id=>name' if you want to be fancy
     ));
-    error_log("bdp_api_helper: preload_regions_lookup_data terms: " . print_r($term, true));
 
     if ( is_wp_error($terms) ) {
         error_log("bdp-api-helper: Failed to load regions taxonomy. Error: " . json_encode($terms->get_error_messages()));
@@ -437,21 +436,22 @@ add_action('init', function() {
 
 // lookup region by name to confirm it exists
 function find_region_term_id($incoming_region_name) {
-    $normalized = strtolower( trim($incoming_region_name) );
+    $region_name = trim($incoming_region_name);
 
     // Normalize common region aliases
+    // cast to lower case to defend against capitalization
     $alias_map = array(
-        'united states' => 'usa',
-        'united states of america' => 'usa',
-        'u.s.' => 'usa',
-        'united kingdom' => 'uk',
-        'great britain' => 'uk',
+        'united states' => 'USA',
+        'united states of america' => 'USA',
+        'u.s.' => 'USA',
+	'u.s.a.' => 'USA',
+	'usa' => 'USA',
     );
 
-    if ( isset($alias_map[$normalized]) ) {
-        $normalized = $alias_map[$normalized];
+    if ( isset($alias_map[strtolower($region_name)]) ) {
+        $region_name = $alias_map[$region_name];
     }
 
-    return $region_lookup[$normalized] ?? null;
+    return $region_lookup[$region_name] ?? null;
 }
 
