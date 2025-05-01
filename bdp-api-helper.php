@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.2
+ * Version: 1.1.3
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
