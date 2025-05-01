@@ -404,12 +404,19 @@ function bdp_api_helper_get_field_id_by_shortname( $shortname ) {
 
 // cache regions in a global so we can look them up without multiple DB hits
 function preload_regions_lookup_data() {
+    // get the bdp region terms
     $terms = get_terms(array(
         'taxonomy' => 'wpbdp_region',
         'hide_empty' => false,
         'fields' => 'all', // or 'id=>name' if you want to be fancy
     ));
 
+    if ( is_wp_error($terms) ) {
+        error_log("bdp-api-helper: Failed to load regions taxonomy. Error: " . print_r($terms->get_error_messages(), true));
+        return array(); // Return empty array so downstream logic doesn't break
+    }
+
+    // populate the terms lookup array
     $lookup = array();
     foreach ( $terms as $term ) {
         error_log("bdp_api_helper: preload_regions_lookup_data term: " . print_r($term, true));
