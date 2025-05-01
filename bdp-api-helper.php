@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.10
+ * Version: 1.1.11
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -12,7 +12,7 @@
 
 const REGION_KEYS = array('country', 'state', 'city');
 
-global $region_lookup;
+$region_lookup = null;
 
 // Prevent direct access
 if ( ! defined( 'ABSPATH' ) ) {
@@ -436,6 +436,8 @@ add_action('init', function() {
 
 // lookup region by name to confirm it exists
 function find_region_term_id($incoming_region_name) {
+    global $region_lookup;
+
     $region_name = trim($incoming_region_name);
 
     // Normalize common region aliases
