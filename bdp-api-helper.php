@@ -449,7 +449,7 @@ function find_region_term_id($incoming_region_name) {
     );
 
     if ( isset($alias_map[strtolower($region_name)]) ) {
-        $region_name = $alias_map[$region_name];
+        $region_name = $alias_map[strtolower($region_name)];
     }
 
     return $region_lookup[$region_name] ?? null;
