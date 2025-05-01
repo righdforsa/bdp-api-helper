@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.12
+ * Version: 1.1.13
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -439,25 +439,22 @@ add_action('init', function() {
 function find_region_term_id($incoming_region_name) {
     global $region_lookup;
 
-    $region_name = trim($incoming_region_name);
+    $region_name = strtolower(trim($incoming_region_name));
 
-    // Normalize common region aliases
+    // Normalize common region USA aliases
     // cast to lower case to defend against capitalization
     $alias_map = array(
-        'united states' => 'USA',
-        'united states of america' => 'USA',
-        'u.s.' => 'USA',
-	'u.s.a.' => 'USA',
-	'usa' => 'USA',
+        'united states' => 'usa',
+        'united states of america' => 'usa',
+        'u.s.' => 'usa',
+	'u.s.a.' => 'usa',
     );
 
-    if ( isset($alias_map[strtolower($region_name)]) ) {
-	error_log("bdp-api-helper: find_region_term_id: remapping {$region_name} to " . $alias_map[strtolower($region_name)]);
-        $region_name = $alias_map[strtolower($region_name)];
+    if ( isset($alias_map[$region_name]) ) {
+	error_log("bdp-api-helper: find_region_term_id: remapping {$region_name} to " . $alias_map[$region_name]);
+        $region_name = $alias_map[$region_name];
     }
 
-	error_log("bdp-api-helper: find_region_term_id: " . json_encode($region_lookup));
-        $region_name = $alias_map[strtolower($region_name)];
     return $region_lookup[$region_name] ?? null;
 }
 
