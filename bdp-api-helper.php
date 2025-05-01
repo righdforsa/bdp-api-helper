@@ -7,7 +7,7 @@
  * License: MIT
  * Text Domain: bdp-api-helper
  *
- * GitHub Plugin URI: https://github.com/yourusername/bdp-api-helper
+ * GitHub Plugin URI: https://github.com/righdforsa/bdp-api-helper
  */
 
 const REGION_KEYS = array('country', 'state', 'city');
