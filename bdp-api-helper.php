@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.13
+ * Version: 1.1.14
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -25,7 +25,85 @@ function bdp_api_helper_plugin_activate() {
 	bdp_api_helper_refresh_registered_fields();
 }
 
-// Helper function: Refresh the cached fields list
+// Use BDP hooks to update registered fields cache when changes are made
+add_action( 'wpbdp_save_form_field', function( $field_id ) {
+    bdp_api_helper_refresh_registered_fields();
+} );
+
+add_action( 'wpbdp_delete_form_field', function( $field_id ) {
+    bdp_api_helper_refresh_registered_fields();
+} );
+
+// debug logging for successful listing update
+add_action( 'rest_after_insert_wpbdp_listing', function( $post, $request, $creating ) {
+    error_log( '[BDP API HELPER] PATCH DATA: ' . print_r( $request->get_params(), true ) );
+    error_log( '[BDP API HELPER] SAVING POST ID: ' . $post->ID );
+}, 10, 3 );
+
+// Runtime Hook: Dynamically register BDP meta fields at init, so they are available to the current REST request
+add_action( 'rest_api_init', 'bdp_api_helper_register_meta_fields' );
+function bdp_api_helper_register_meta_fields() {
+    if ( ! post_type_exists( 'wpbdp_listing' ) ) {
+        return; // Safety check: BDP must be active
+    }
+
+    $fields = get_option( 'bdp_api_helper_registered_fields', [] );
+
+    foreach ( $fields as $field ) {
+        $meta_key = "_wpbdp[fields][{$field['id']}]";
+
+        register_post_meta( 'wpbdp_listing', $meta_key, [
+            'show_in_rest' => true,
+            'single'       => true,
+            'type'         => 'string',
+            'auth_callback' => function() {
+                return current_user_can( 'edit_posts' );
+            },
+        ]);
+    }
+}
+
+// Runtime Hook: preload the BDP regions data so we can look it up without heavy DB involvement
+add_action('rest_api_init', function() {
+    global $region_lookup;
+    $region_lookup = preload_regions_lookup_data();
+});
+
+
+// REST API endpoint: Register the BDP API helper listing routes
+add_action( 'rest_api_init', function() {
+    register_rest_route( 'bdp-api-helper/v1', '/fields', [
+        'methods'  => 'GET',
+        'callback' => 'bdp_api_helper_list_fields',
+        'permission_callback' => '__return_true',
+    ]);
+
+    register_rest_route( 'bdp-api-helper/v1', '/regions', [
+        'methods'  => 'GET',
+        'callback' => 'bdp_api_helper_list_regions',
+        'permission_callback' => '__return_true',
+    ]);
+
+    register_rest_route( 'bdp-api-helper/v1', '/update-listing', array(
+        'methods'  => 'PATCH',
+        'callback' => 'bdp_api_helper_update_listing',
+        'permission_callback' => 'bdp_api_helper_permission_callback',
+        'args'     => array( bdp_api_helper_get_dynamic_args( 'update' ) ),
+    ) );
+
+    register_rest_route( 'bdp-api-helper/v1', '/create-listing', array(
+        'methods'  => 'POST',
+        'callback' => 'bdp_api_helper_create_listing',
+        'permission_callback' => 'bdp_api_helper_permission_callback',
+        'args'     => array( bdp_api_helper_get_dynamic_args( 'create' ) ),
+    ) );
+
+    // Add meta validation for updates
+    add_filter( 'rest_pre_insert_wpbdp_listing', 'bdp_api_helper_validate_meta_fields', 10, 2 );
+} );
+
+// Callback function to handle creating the listing
+// Helper function: Refresh the cached BDP form fields list
 function bdp_api_helper_refresh_registered_fields() {
     global $wpdb;
 
@@ -49,48 +127,6 @@ function bdp_api_helper_refresh_registered_fields() {
     }
 }
 
-// Use BDP hooks to update registered fields cache when changes are made
-add_action( 'wpbdp_save_form_field', function( $field_id ) {
-    bdp_api_helper_refresh_registered_fields();
-} );
-
-add_action( 'wpbdp_delete_form_field', function( $field_id ) {
-    bdp_api_helper_refresh_registered_fields();
-} );
-
-// Runtime Hook: Dynamically register BDP meta fields at init, so they are available to the current REST request
-add_action( 'init', 'bdp_api_helper_register_meta_fields' );
-function bdp_api_helper_register_meta_fields() {
-    if ( ! post_type_exists( 'wpbdp_listing' ) ) {
-        return; // Safety check: BDP must be active
-    }
-
-    $fields = get_option( 'bdp_api_helper_registered_fields', [] );
-
-    foreach ( $fields as $field ) {
-        $meta_key = "_wpbdp[fields][{$field['id']}]";
-
-        register_post_meta( 'wpbdp_listing', $meta_key, [
-            'show_in_rest' => true,
-            'single'       => true,
-            'type'         => 'string',
-            'auth_callback' => function() {
-                return current_user_can( 'edit_posts' );
-            },
-        ]);
-    }
-}
-
-// REST API Endpoint: List available BDP fields
-add_action( 'rest_api_init', function() {
-    register_rest_route( 'bdp-api-helper/v1', '/fields', [
-        'methods'  => 'GET',
-        'callback' => 'bdp_api_helper_list_fields',
-        'permission_callback' => '__return_true',
-    ]);
-
-});
-
 // Endpoint "list fields" callback function
 function bdp_api_helper_list_fields( WP_REST_Request $request ) {
     global $wpdb;
@@ -102,6 +138,12 @@ function bdp_api_helper_list_fields( WP_REST_Request $request ) {
     }
 
     return rest_ensure_response( $results );
+}
+
+// Endpoint "list regions" callback function
+function bdp_api_helper_list_regions( WP_REST_Request $request ) {
+    global $region_lookup;
+    return rest_ensure_response( $region_lookup );
 }
 
 // Validation: only known meta fields allowed in REST calls
@@ -134,33 +176,6 @@ function bdp_api_helper_validate_meta_fields( $prepared_post, WP_REST_Request $r
     return $prepared_post;
 }
 
-// debug logging for successful listing update
-add_action( 'rest_after_insert_wpbdp_listing', function( $post, $request, $creating ) {
-    error_log( '[BDP API HELPER] PATCH DATA: ' . print_r( $request->get_params(), true ) );
-    error_log( '[BDP API HELPER] SAVING POST ID: ' . $post->ID );
-}, 10, 3 );
-
-// Register the BDP API helper listing routes
-add_action( 'rest_api_init', function() {
-    register_rest_route( 'bdp-api-helper/v1', '/update-listing', array(
-        'methods'  => 'PATCH',
-        'callback' => 'bdp_api_helper_update_listing',
-        'permission_callback' => 'bdp_api_helper_permission_callback',
-        'args'     => array( bdp_api_helper_get_dynamic_args( 'update' ) ),
-    ) );
-
-    register_rest_route( 'bdp-api-helper/v1', '/create-listing', array(
-        'methods'  => 'POST',
-        'callback' => 'bdp_api_helper_create_listing',
-        'permission_callback' => 'bdp_api_helper_permission_callback',
-        'args'     => array( bdp_api_helper_get_dynamic_args( 'create' ) ),
-    ) );
-
-    // Add meta validation for updates
-    add_filter( 'rest_pre_insert_wpbdp_listing', 'bdp_api_helper_validate_meta_fields', 10, 2 );
-} );
-
-// Callback function to handle creating the listing
 function bdp_api_helper_create_listing( $request ) {
     error_log("BDP API Helper: create: " . json_encode($request->get_params()));
 
@@ -429,11 +444,6 @@ function preload_regions_lookup_data() {
     error_log("bdp-api-helper: preloaded " . count($lookup) . " region terms");
     return $lookup;
 }
-
-add_action('init', function() {
-    global $region_lookup;
-    $region_lookup = preload_regions_lookup_data();
-});
 
 // lookup region by name to confirm it exists
 function find_region_term_id($incoming_region_name) {
