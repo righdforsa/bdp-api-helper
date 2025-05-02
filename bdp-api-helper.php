@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.14
+ * Version: 1.1.15
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -438,7 +438,12 @@ function preload_regions_lookup_data() {
     // populate the terms lookup array
     $lookup = array();
     foreach ( $terms as $term ) {
-        $lookup[ strtolower( $term->name ) ] = $term->term_id;
+        $enabled = get_term_meta( $term->term_id, 'enabled', true );
+        if( $enabled === '1' ) {
+            $lookup[ strtolower( $term->name ) ] = $term->term_id;
+        } else {
+            error_log("bdp-api-helper: skipping disabled region term: {$term->name}");
+        }
     }
 
     error_log("bdp-api-helper: preloaded " . count($lookup) . " region terms");
@@ -457,11 +462,11 @@ function find_region_term_id($incoming_region_name) {
         'united states' => 'usa',
         'united states of america' => 'usa',
         'u.s.' => 'usa',
-	'u.s.a.' => 'usa',
+	    'u.s.a.' => 'usa',
     );
 
     if ( isset($alias_map[$region_name]) ) {
-	error_log("bdp-api-helper: find_region_term_id: remapping {$region_name} to " . $alias_map[$region_name]);
+	    error_log("bdp-api-helper: find_region_term_id: remapping {$region_name} to " . $alias_map[$region_name]);
         $region_name = $alias_map[$region_name];
     }
 
