@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.16
+ * Version: 1.1.17
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -176,48 +176,15 @@ function bdp_api_helper_validate_meta_fields( $prepared_post, WP_REST_Request $r
     return $prepared_post;
 }
 
-function bdp_api_helper_create_listing( $request ) {
-    error_log("BDP API Helper: create: " . json_encode($request->get_params()));
+function bdp_api_helper_validate_meta_fields($params) {
+    $skip_keys = array( 'id', 'title', 'status', REGION_KEYS );
 
-    $post_data = array(
-        'post_type'   => 'wpbdp_listing',
-        'post_status' => $request->get_param('status') ?: 'draft',
-        'post_title'  => $request->get_param('title'),
-    );
-
-    if ( empty( $post_data['post_title'] ) ) {
-        return new WP_Error( 'missing_title', 'Title is required to create a listing.', array( 'status' => 400 ) );
-    }
-
-    // Create post
-    $post_id = wp_insert_post( $post_data );
-
-    if ( ! $post_id || is_wp_error( $post_id ) ) {
-        error_log( "BDP API Helper: Failed to insert listing with title: " . $post_data['post_title'] );
-        return new WP_Error( 'insert_failed', 'Failed to create BDP listing.', array( 'status' => 500 ) );
-    }
-
-    // Save all valid BDP fields as post meta
-    foreach ( $request->get_params() as $key => $value ) {
-        if ( in_array( $key, array(
-                                'title',
-                                'status',
-                                'id',
-                                'country',
-                                'state',
-                                'city'
-                             ), true ) ) {
+    foreach ( $params as $key => $value ) {
+        // Skip system fields, region fields, and parameters with empty values
+        if ( in_array( $key, array($skip_keys, REGION_KEYS), true ) || empty($value) ) {
             continue;
         }
 
-        if( in_array( $key, REGION_KEYS, true)) {
-            $found = find_region_term_id($value);
-            if ($found === null) {
-            error_log( "BDP API Helper: Unknown region value during creation: {$key}" );
-            return new WP_Error( 'invalid_region', "{$key} region {$value} not found.", array( 'status' => 400 ) );
-
-            }
-        }
         // confirm each parameter is a known listing field
         $field_id = bdp_api_helper_get_field_id_by_shortname( $key );
         if ( ! $field_id ) {
@@ -243,7 +210,7 @@ function bdp_api_helper_create_listing( $request ) {
                     $selected_fields.push($field['shortname']);
                 }
             }
-            error_log("debug bpd-api-helper: selected_fields" . json_encode($selected_fields, true));
+            error_log("debug bpd-api-helper: URL type selected_fields" . json_encode($selected_fields, true));
             return $selected_fields;
         });
 
@@ -254,18 +221,98 @@ function bdp_api_helper_create_listing( $request ) {
             if ( is_string( $value ) ) {
                 $decoded = json_decode( $value, true );
                 if ( is_array( $decoded ) ) {
-                    $value = $decoded;
+                    $params[$key] = $decoded;
                 }
             }
         }
+    }
+
+    return $params;
+}
+
+function bdp_api_helper_validate_region_fields($params) {
+    // Validate region hierarchy
+    foreach (REGION_KEYS as $region_key) {
+        $value = $params[$region_key];
+        if (empty($value)) {
+            $parent_empty = true;
+            unset($params[$region_key]);
+        } else {
+            if($parent_empty) {
+                return new WP_Error( 'invalid_region_hierarchy', 'Parent region is required for any region value.', array( 'status' => 400 ) );
+            }
+    
+            // confirm the region key exists
+            $found = find_region_term_id($value);
+            if ($found === null) {
+                error_log( "BDP API Helper: Unknown region value during creation: {$region_key} {$value}" );
+                return new WP_Error( 'invalid_region', "{$key} region {$value} not found.", array( 'status' => 400 ) );
+            }
+        }
+    }
+    
+    return $params;
+}
+
+function bdp_api_helper_create_listing( $request ) {
+    error_log("BDP API Helper: create: " . json_encode($request->get_params()));
+
+    $post_data = array(
+        'post_type'   => 'wpbdp_listing',
+        'post_status' => $request->get_param('status') ?: 'draft',
+        'post_title'  => $request->get_param('title'),
+    );
+
+    if ( empty( $post_data['post_title'] ) ) {
+        return new WP_Error( 'missing_title', 'Title is required to create a listing.', array( 'status' => 400 ) );
+    }
+
+    // validate and clean the params
+    $params = $request->get_params();
+    $params = bdp_api_helper_validate_meta_fields($params);
+    $params = bdp_api_helper_validate_region_fields($params);
+    $clean_params = $params;
+
+    // Create post
+    $post_id = wp_insert_post( $post_data );
+
+    if ( ! $post_id || is_wp_error( $post_id ) ) {
+        error_log( "BDP API Helper: Failed to insert listing with title: " . $post_data['post_title'] );
+        return new WP_Error( 'insert_failed', 'Failed to create BDP listing.', array( 'status' => 500 ) );
+    }
+
+    $skip_keys = array( 'id', 'title', 'status' );
+    $region_updates = array();
+
+    // Save all valid BDP fields as post meta
+    foreach ( $clean_params as $key => $value ) {
+        // Skip system fields, region fields, and empty values
+        if ( in_array( $key, $skip_keys, true ) || empty($value) ) {
+            continue;
+        }
+
+        // Collect region updates
+        if(in_array( $key, REGION_KEYS, true )) {
+            $region_id = find_region_term_id($value);
+            $region_updates[$key] = $region_id;
+            continue;
+        }
 
         // prepare the field and insert
+        $field_id = bdp_api_helper_get_field_id_by_shortname( $key );
         $meta_key = "_wpbdp[fields][{$field_id}]";
         $update_result = update_post_meta( $post_id, $meta_key, $value );
         if( $update_result === false ) {
             error_log( "BDP API Helper: Failed to insert meta field {$field_key} for post ID {$post_id}" );
             return new WP_Error( 'update_failed', "Failed to insert meta field {$field_key}.", array( 'status' => 500 ) );
         }
+    }
+
+    // Update regions
+    $update_result = wp_set_object_terms($post_id, $region_updates, 'wpbdm-region');
+    if( $update_result === false ) {
+        error_log( "BDP API Helper: Failed to update regions for post ID {$post_id}" );
+        return new WP_Error( 'update_failed', "Failed to update regions.", array( 'status' => 500 ) );
     }
 
     error_log("BDP API Helper: Created listing ID {$post_id}");
@@ -286,28 +333,31 @@ function bdp_api_helper_update_listing( $request ) {
         return new WP_Error( 'invalid_post', 'Listing not found.', array( 'status' => 404 ) );
     }
 
+    $params = $request->get_params();
+    $params = bdp_api_helper_validate_meta_fields($params);
+    $params = bdp_api_helper_validate_region_fields($params);
+    $clean_params = $params;
+
+
     $skip_keys = array( 'id', 'title', 'status' );
     $updates = array();
+    $region_updates = array();
 
     // Update the postmeta
-    foreach ( $request->get_params() as $key => $value ) {
-        if(in_array( $key, $skip_keys, true )) {
+    foreach ( $clean_params as $key => $value ) {
+        // Skip system fields, region fields, and empty values
+        if(in_array( $key, $skip_keys, true ) || empty($value)) {
             continue;
         }
-        if(in_array( $key, REGION_KEYS, true )) {
-            // confirm the region key exists
-            if (find_region_term_id($value) === null) {
-                error_log( "BDP API Helper: Unknown region value during update: {$key} {$value}" );
-                return new WP_Error( 'invalid_region', "{$key} region {$value} not found.", array( 'status' => 400 ) );
-            }
 
+        // Collect region updates
+        if(in_array( $key, REGION_KEYS, true ) || empty($value)) {
+            $region_id = find_region_term_id($value);
+            $region_updates[$key] = $region_id;
+            continue;
         }
+
         $field_id = bdp_api_helper_get_field_id_by_shortname($key);
-        if(! $field_id) {
-            error_log("BDP API Helper: Unknown field received in PATCH: {$key}");
-            return new WP_Error( 'invalid_post', 'Field not found.', array( 'status' => 400 ) );
-        }
-
         $field_key = "_wpbdp[fields][{$field_id}]";
         $current_value = get_post_meta($post_id, $field_key, true);
         if( $value != $current_value ) {
@@ -328,9 +378,16 @@ function bdp_api_helper_update_listing( $request ) {
             }
         }
         else {
-            error_log("bdp_api_helper_update_listing: skipping update for $field_key because values match: "
+            error_log("debug: bdp_api_helper_update_listing: skipping update for $field_key because values match: "
                 . print_r($value, true));
         }
+    }
+
+    // Update regions
+    $update_result = wp_set_object_terms($post_id, $region_updates, 'wpbdm-region');
+    if( $update_result === false ) {
+        error_log( "BDP API Helper: Failed to update regions for post ID {$post_id}" );
+        return new WP_Error( 'update_failed', "Failed to update regions.", array( 'status' => 500 ) );
     }
 
     return rest_ensure_response( array(
