@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.18
+ * Version: 1.1.19
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -181,7 +181,9 @@ function bdp_api_helper_sanitize_meta_fields($params) {
 
     foreach ( $params as $key => $value ) {
         // Skip system fields, region fields, and parameters with empty values
-        if ( in_array( $key, array($skip_keys, REGION_KEYS), true ) || empty($value) ) {
+        if ( in_array( $key, $skip_keys, true )
+          || in_array( $key, REGION_KEYS, true )
+          || empty($value) ) {
             continue;
         }
 
