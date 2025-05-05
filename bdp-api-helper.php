@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.17
+ * Version: 1.1.18
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -176,7 +176,7 @@ function bdp_api_helper_validate_meta_fields( $prepared_post, WP_REST_Request $r
     return $prepared_post;
 }
 
-function bdp_api_helper_validate_meta_fields($params) {
+function bdp_api_helper_sanitize_meta_fields($params) {
     $skip_keys = array( 'id', 'title', 'status', REGION_KEYS );
 
     foreach ( $params as $key => $value ) {
@@ -269,7 +269,7 @@ function bdp_api_helper_create_listing( $request ) {
 
     // validate and clean the params
     $params = $request->get_params();
-    $params = bdp_api_helper_validate_meta_fields($params);
+    $params = bdp_api_helper_sanitize_meta_fields($params);
     $params = bdp_api_helper_validate_region_fields($params);
     $clean_params = $params;
 
@@ -334,7 +334,7 @@ function bdp_api_helper_update_listing( $request ) {
     }
 
     $params = $request->get_params();
-    $params = bdp_api_helper_validate_meta_fields($params);
+    $params = bdp_api_helper_sanitize_meta_fields($params);
     $params = bdp_api_helper_validate_region_fields($params);
     $clean_params = $params;
 
