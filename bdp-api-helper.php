@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.19
+ * Version: 1.1.20
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -177,7 +177,7 @@ function bdp_api_helper_validate_meta_fields( $prepared_post, WP_REST_Request $r
 }
 
 function bdp_api_helper_sanitize_meta_fields($params) {
-    $skip_keys = array( 'id', 'title', 'status', REGION_KEYS );
+    $skip_keys = array( 'id', 'title', 'status' );
 
     foreach ( $params as $key => $value ) {
         // Skip system fields, region fields, and parameters with empty values
@@ -288,7 +288,7 @@ function bdp_api_helper_create_listing( $request ) {
 
     // Save all valid BDP fields as post meta
     foreach ( $clean_params as $key => $value ) {
-        // Skip system fields, region fields, and empty values
+        // Skip system fields, and empty values
         if ( in_array( $key, $skip_keys, true ) || empty($value) ) {
             continue;
         }
@@ -353,7 +353,7 @@ function bdp_api_helper_update_listing( $request ) {
         }
 
         // Collect region updates
-        if(in_array( $key, REGION_KEYS, true ) || empty($value)) {
+        if(in_array( $key, REGION_KEYS, true )) {
             $region_id = find_region_term_id($value);
             $region_updates[$key] = $region_id;
             continue;
@@ -524,10 +524,76 @@ function find_region_term_id($incoming_region_name) {
         'united states of america' => 'usa',
         'u.s.' => 'usa',
 	    'u.s.a.' => 'usa',
+
+        // USA states
+        'al' => 'alabama',
+        'ak' => 'alaska',
+        'az' => 'arizona',
+        'ar' => 'arkansas',
+        'ca' => 'california',
+        'co' => 'colorado',
+        'ct' => 'connecticut',
+        'de' => 'delaware',
+        'fl' => 'florida',
+        'ga' => 'georgia',
+        'hi' => 'hawaii',
+        'ia' => 'iowa',
+        'id' => 'idaho',
+        'il' => 'illinois',
+        'in' => 'indiana',
+        'ks' => 'kansas',
+        'ky' => 'kentucky',
+        'la' => 'louisiana',
+        'ma' => 'massachusetts',
+        'md' => 'maryland',
+        'me' => 'maine',
+        'mi' => 'michigan',
+        'mn' => 'minnesota',
+        'mo' => 'missouri',
+        'ms' => 'mississippi',
+        'mt' => 'montana',
+        'nc' => 'north carolina',
+        'nd' => 'north dakota',
+        'ne' => 'nebraska',
+        'nh' => 'new hampshire',
+        'nj' => 'new jersey',
+        'nm' => 'new mexico',
+        'nv' => 'nevada',
+        'ny' => 'new york',
+        'oh' => 'ohio',
+        'ok' => 'oklahoma',
+        'or' => 'oregon',
+        'pa' => 'pennsylvania',
+        'ri' => 'rhode island',
+        'sc' => 'south carolina',
+        'sd' => 'south dakota',
+        'tn' => 'tennessee',
+        'tx' => 'texas',
+        'ut' => 'utah',
+        'va' => 'virginia',
+        'wa' => 'washington',
+        'wi' => 'wisconsin',
+        'wv' => 'west virginia',
+        'wy' => 'wyoming',
+
+        // Canadian provinces
+        'ab' => 'alberta',
+        'bc' => 'british columbia',
+        'mb' => 'manitoba',
+        'nb' => 'new brunswick',
+        'nl' => 'newfoundland and labrador',
+        'ns' => 'nova scotia',
+        'nt' => 'northwest territories',
+        'nu' => 'nunavut',
+        'on' => 'ontario',
+        'pe' => 'prince edward island',
+        'qc' => 'quebec',
+        'sk' => 'saskatchewan',
+        'yk' => 'yukon',
     );
 
     if ( isset($alias_map[$region_name]) ) {
-	    error_log("bdp-api-helper: find_region_term_id: remapping {$region_name} to " . $alias_map[$region_name]);
+        error_log("bdp-api-helper: find_region_term_id: remapping {$region_name} to " . $alias_map[$region_name]);
         $region_name = $alias_map[$region_name];
     }
 
