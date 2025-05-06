@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.23
+ * Version: 1.1.24
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -245,6 +245,7 @@ function bdp_api_helper_validate_region_fields($params) {
         if (empty($value)) {
             $parent_empty = true;
             unset($params[$region_key]);
+            continue;
         }
         
         if($parent_empty) {
@@ -252,7 +253,7 @@ function bdp_api_helper_validate_region_fields($params) {
         }
 
         // confirm the region key exists
-        $found = find_region_term_id($value);
+        $found = bdp_api_helper_find_region_term_id($value);
         if ($found === null) {
             error_log( "BDP API Helper: Unknown region value during creation: {$region_key} {$value}" );
             return new WP_Error( 'invalid_region', "{$region_key} region {$value} not found.", array( 'status' => 400 ) );
@@ -337,7 +338,7 @@ function bdp_api_helper_create_listing( $request ) {
 
         // Collect region updates, which we've already validated
         if(in_array( $key, REGION_KEYS, true )) {
-            $region_id = find_region_term_id($value);
+            $region_id = bdp_api_helper_find_region_term_id($value);
             $region_updates[$key] = $region_id;
             continue;
         }
@@ -417,7 +418,7 @@ function bdp_api_helper_update_listing( $request ) {
 
         // Collect region updates, which we've already validated
         if(in_array( $key, REGION_KEYS, true )) {
-            $region_id = find_region_term_id($value);
+            $region_id = bdp_api_helper_find_region_term_id($value);
             $region_updates[$key] = $region_id;
             continue;
         }
@@ -620,7 +621,7 @@ function preload_regions_lookup_data() {
 }
 
 // lookup region by name to confirm it exists
-function find_region_term_id($incoming_region_name) {
+function bdp_api_helper_find_region_term_id($incoming_region_name) {
     global $region_lookup;
 
     $region_name = strtolower(trim($incoming_region_name));
@@ -701,7 +702,7 @@ function find_region_term_id($incoming_region_name) {
     );
 
     if ( isset($alias_map[$region_name]) ) {
-        error_log("bdp-api-helper: find_region_term_id: remapping {$region_name} to " . $alias_map[$region_name]);
+        error_log("bdp-api-helper: bdp_api_helper_find_region_term_id: remapping {$region_name} to " . $alias_map[$region_name]);
         $region_name = $alias_map[$region_name];
     }
 
