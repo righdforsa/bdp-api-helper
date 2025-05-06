@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.20
+ * Version: 1.1.21
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -234,23 +234,26 @@ function bdp_api_helper_sanitize_meta_fields($params) {
 
 function bdp_api_helper_validate_region_fields($params) {
     // Validate region hierarchy
+    $parent_empty = false;
+    
     foreach (REGION_KEYS as $region_key) {
-        $value = $params[$region_key];
+        $value = $params[$region_key] ?? '';
         if (empty($value)) {
             $parent_empty = true;
             unset($params[$region_key]);
-        } else {
-            if($parent_empty) {
-                return new WP_Error( 'invalid_region_hierarchy', 'Parent region is required for any region value.', array( 'status' => 400 ) );
-            }
-    
-            // confirm the region key exists
-            $found = find_region_term_id($value);
-            if ($found === null) {
-                error_log( "BDP API Helper: Unknown region value during creation: {$region_key} {$value}" );
-                return new WP_Error( 'invalid_region', "{$key} region {$value} not found.", array( 'status' => 400 ) );
-            }
         }
+        
+        if($parent_empty) {
+            return new WP_Error( 'invalid_region_hierarchy', 'Parent region is required for any region value.', array( 'status' => 400 ) );
+        }
+    
+        // confirm the region key exists
+        $found = find_region_term_id($value);
+        if ($found === null) {
+            error_log( "BDP API Helper: Unknown region value during creation: {$region_key} {$value}" );
+            return new WP_Error( 'invalid_region', "{$key} region {$value} not found.", array( 'status' => 400 ) );
+        }
+
     }
     
     return $params;
@@ -271,8 +274,19 @@ function bdp_api_helper_create_listing( $request ) {
 
     // validate and clean the params
     $params = $request->get_params();
+    
+    // Sanitize meta fields first
     $params = bdp_api_helper_sanitize_meta_fields($params);
+    if (is_wp_error($params)) {
+        return $params;
+    }
+    
+    // Then validate region fields
     $params = bdp_api_helper_validate_region_fields($params);
+    if (is_wp_error($params)) {
+        return $params;
+    }
+
     $clean_params = $params;
 
     // Create post
@@ -311,10 +325,12 @@ function bdp_api_helper_create_listing( $request ) {
     }
 
     // Update regions
-    $update_result = wp_set_object_terms($post_id, $region_updates, 'wpbdm-region');
-    if( $update_result === false ) {
-        error_log( "BDP API Helper: Failed to update regions for post ID {$post_id}" );
-        return new WP_Error( 'update_failed', "Failed to update regions.", array( 'status' => 500 ) );
+    if (!empty($region_updates)) {
+        $update_result = wp_set_object_terms($post_id, $region_updates, 'wpbdm-region');
+        if( $update_result === false ) {
+            error_log( "BDP API Helper: Failed to update regions for post ID {$post_id}" );
+            return new WP_Error( 'update_failed', "Failed to update regions.", array( 'status' => 500 ) );
+        }
     }
 
     error_log("BDP API Helper: Created listing ID {$post_id}");
@@ -500,7 +516,6 @@ function preload_regions_lookup_data() {
         $enabled = get_term_meta( $term->term_id, 'enabled', true );
         // skip disabled region terms
         if( $enabled === '0' ) {
-            error_log("bdp-api-helper: skipping disabled region term: {$term->name} (ID: {$term->term_id}, enabled value: " . var_export($enabled, true) . ")");
             continue;
         }
 
