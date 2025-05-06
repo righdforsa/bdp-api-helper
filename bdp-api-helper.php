@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.22
+ * Version: 1.1.23
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -11,8 +11,10 @@
  */
 
 const REGION_KEYS = array('country', 'state', 'city');
+const CATEGORY_TAXONOMY = 'wpbdp_category';
 
 $region_lookup = null;
+$category_lookup = null;
 
 // Prevent direct access
 if ( ! defined( 'ABSPATH' ) ) {
@@ -63,10 +65,11 @@ function bdp_api_helper_register_meta_fields() {
     }
 }
 
-// Runtime Hook: preload the BDP regions data so we can look it up without heavy DB involvement
+// Runtime Hook: preload the BDP regions and categories data
 add_action('rest_api_init', function() {
-    global $region_lookup;
+    global $region_lookup, $category_lookup;
     $region_lookup = preload_regions_lookup_data();
+    $category_lookup = preload_categories_lookup_data();
 });
 
 
@@ -237,6 +240,7 @@ function bdp_api_helper_validate_region_fields($params) {
     $parent_empty = false;
     
     foreach (REGION_KEYS as $region_key) {
+        // skip empty values, mark the parent as empty for the next value check
         $value = $params[$region_key] ?? '';
         if (empty($value)) {
             $parent_empty = true;
@@ -246,16 +250,34 @@ function bdp_api_helper_validate_region_fields($params) {
         if($parent_empty) {
             return new WP_Error( 'invalid_region_hierarchy', 'Parent region is required for any region value.', array( 'status' => 400 ) );
         }
-    
+
         // confirm the region key exists
         $found = find_region_term_id($value);
         if ($found === null) {
             error_log( "BDP API Helper: Unknown region value during creation: {$region_key} {$value}" );
-            return new WP_Error( 'invalid_region', "{$key} region {$value} not found.", array( 'status' => 400 ) );
+            return new WP_Error( 'invalid_region', "{$region_key} region {$value} not found.", array( 'status' => 400 ) );
         }
-
     }
     
+    return $params;
+}
+
+function bdp_api_helper_validate_category_fields($params) {
+    if (!isset($params['wpbdp_categories']) || !is_array($params['wpbdp_categories'])) {
+        return $params;
+    }
+
+    $valid_categories = array();
+    foreach ($params['wpbdp_categories'] as $category) {
+        $term_id = bdp_api_helper_find_category_term_id($category);
+        if ($term_id === null) {
+            error_log("BDP API Helper: Unknown category value: {$category}");
+            return new WP_Error('invalid_category', "Category '{$category}' not found.", array('status' => 400));
+        }
+        $valid_categories[] = $term_id;
+    }
+
+    $params['wpbdp_categories'] = $valid_categories;
     return $params;
 }
 
@@ -287,6 +309,12 @@ function bdp_api_helper_create_listing( $request ) {
         return $params;
     }
 
+    // Then validate category fields
+    $params = bdp_api_helper_validate_category_fields($params);
+    if (is_wp_error($params)) {
+        return $params;
+    }
+
     $clean_params = $params;
 
     // Create post
@@ -297,7 +325,7 @@ function bdp_api_helper_create_listing( $request ) {
         return new WP_Error( 'insert_failed', 'Failed to create BDP listing.', array( 'status' => 500 ) );
     }
 
-    $skip_keys = array( 'id', 'title', 'status' );
+    $skip_keys = array( 'id', 'title', 'status', 'wpbdp_categories' );
     $region_updates = array();
 
     // Save all valid BDP fields as post meta
@@ -333,6 +361,15 @@ function bdp_api_helper_create_listing( $request ) {
         }
     }
 
+    // Update categories
+    if (!empty($clean_params['wpbdp_categories'])) {
+        $update_result = wp_set_object_terms($post_id, $clean_params['wpbdp_categories'], CATEGORY_TAXONOMY);
+        if( $update_result === false ) {
+            error_log( "BDP API Helper: Failed to update BDP categories for post ID {$post_id}" );
+            return new WP_Error( 'update_failed', "Failed to update BDP categories.", array( 'status' => 500 ) );
+        }
+    }
+
     error_log("BDP API Helper: Created listing ID {$post_id}");
 
     return rest_ensure_response( array(
@@ -361,9 +398,13 @@ function bdp_api_helper_update_listing( $request ) {
     if (is_wp_error($params)) {
         return $params;
     }
+    $params = bdp_api_helper_validate_category_fields($params);
+    if (is_wp_error($params)) {
+        return $params;
+    }
     $clean_params = $params;
     
-    $skip_keys = array( 'id', 'title', 'status' );
+    $skip_keys = array( 'id', 'title', 'status', 'wpbdp_categories' );
     $updates = array();
     $region_updates = array();
 
@@ -433,6 +474,24 @@ function bdp_api_helper_update_listing( $request ) {
         }
     }
 
+    // Update categories if we have any
+    if (!empty($clean_params['wpbdp_categories'])) {
+        $update_result = wp_set_object_terms($post_id, $clean_params['wpbdp_categories'], CATEGORY_TAXONOMY);
+        if( $update_result === false ) {
+            error_log( "BDP API Helper: Failed to update categories for post ID {$post_id}" );
+            return new WP_Error( 'update_failed', "Failed to update categories.", array( 'status' => 500 ) );
+        }
+        
+        // Add category updates to the response
+        array_push(
+            $updates,
+            array(
+                'field_updated' => 'wpbdp_categories',
+                'new_value' => $clean_params['wpbdp_categories']
+            )
+        );
+    }
+
     return rest_ensure_response( array(
         'success' => true,
         'post_id' => $post_id,
@@ -470,6 +529,15 @@ function bdp_api_helper_get_dynamic_args( $operation ) {
         'city' => array(
             'required' => false,
             'type' => 'string',
+        ),
+
+        // BDP category fields
+        'wpbdp_categories' => array(
+            'required' => false,
+            'type' => 'array',
+            'items' => array(
+                'type' => 'string'
+            ),
         ),
 
     );
@@ -638,5 +706,41 @@ function find_region_term_id($incoming_region_name) {
     }
 
     return $region_lookup[$region_name] ?? null;
+}
+
+// cache categories in a global so we can look them up without multiple DB hits
+function preload_categories_lookup_data() {
+    // get the bdp category terms
+    $terms = get_terms(array(
+        'taxonomy' => CATEGORY_TAXONOMY,
+        'hide_empty' => false,
+        'fields' => 'all',
+    ));
+
+    if ( is_wp_error($terms) ) {
+        error_log("bdp-api-helper: Failed to load categories taxonomy. Error: " . json_encode($terms->get_error_messages()));
+        return array(); // Return empty array so downstream logic doesn't break
+    }
+
+    // populate the terms lookup array
+    $lookup = array();
+    foreach ( $terms as $term ) {
+        $enabled = get_term_meta( $term->term_id, 'enabled', true );
+        // skip disabled category terms
+        if( $enabled === '0' ) {
+            continue;
+        }
+
+        $lookup[ strtolower( $term->name ) ] = $term->term_id;
+    }
+
+    error_log("bdp-api-helper: preloaded " . count($lookup) . " bdp category terms");
+    return $lookup;
+}
+
+// lookup category by name to confirm it exists
+function find_category_term_id($incoming_category_name) {
+    global $category_lookup;
+    return $category_lookup[strtolower(trim($incoming_category_name))] ?? null;
 }
 
