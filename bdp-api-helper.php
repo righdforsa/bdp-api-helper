@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.24
+ * Version: 1.1.25
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -293,6 +293,27 @@ function bdp_api_helper_create_listing( $request ) {
 
     if ( empty( $post_data['post_title'] ) ) {
         return new WP_Error( 'missing_title', 'Title is required to create a listing.', array( 'status' => 400 ) );
+    }
+
+    // Check for existing listings with the same title
+    $existing_posts = get_posts(array(
+        'post_type' => 'wpbdp_listing',
+        'post_status' => array('publish', 'draft', 'pending'),
+        'title' => $post_data['post_title'],
+        'posts_per_page' => 1,
+    ));
+
+    if (!empty($existing_posts)) {
+        error_log("BDP API Helper: Found existing listing with title: " . $post_data['post_title']);
+        return new WP_Error(
+            'duplicate_title',
+            'A listing with this title already exists.',
+            array(
+                'status' => 409,
+                'existing_post_id' => $existing_posts[0]->ID,
+                'existing_post_status' => $existing_posts[0]->post_status
+            )
+        );
     }
 
     // validate and clean the params
