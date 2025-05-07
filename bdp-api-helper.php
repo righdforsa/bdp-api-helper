@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.29
+ * Version: 1.1.30
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -12,15 +12,16 @@
 
 const REGION_KEYS = array('country', 'state', 'city');
 const CATEGORY_TAXONOMY = 'wpbdp_category';
+const TAG_TAXONOMY = 'wpbdp_tag';
 
 // Field type constants
 const SYSTEM_FIELDS = array('id', 'title', 'status');
-const TAXONOMY_FIELDS = array('wpbdp_categories');
-$skip_fields = array_merge(SYSTEM_FIELDS, TAXONOMY_FIELDS, REGION_KEYS);
-const SKIP_FIELDS = $skip_fields;
+const TAXONOMY_FIELDS = array('wpbdp_categories', 'wpbdp_tags');
+const SKIP_FIELDS = array('id', 'title', 'status', 'country', 'state', 'city', 'wpbdp_categories', 'wpbdp_tags');
 
 $region_lookup = null;
 $category_lookup = null;
+$tag_lookup = null;
 
 // Prevent direct access
 if ( ! defined( 'ABSPATH' ) ) {
@@ -73,9 +74,10 @@ function bdp_api_helper_register_meta_fields() {
 
 // Runtime Hook: preload the BDP regions and categories data
 add_action('rest_api_init', function() {
-    global $region_lookup, $category_lookup;
+    global $region_lookup, $category_lookup, $tag_lookup;
     $region_lookup = preload_regions_lookup_data();
     $category_lookup = preload_categories_lookup_data();
+    $tag_lookup = preload_tags_lookup_data();
 });
 
 
@@ -96,6 +98,12 @@ add_action( 'rest_api_init', function() {
     register_rest_route( 'bdp-api-helper/v1', '/categories', [
         'methods'  => 'GET',
         'callback' => 'bdp_api_helper_list_categories',
+        'permission_callback' => '__return_true',
+    ]);
+
+    register_rest_route( 'bdp-api-helper/v1', '/tags', [
+        'methods'  => 'GET',
+        'callback' => 'bdp_api_helper_list_tags',
         'permission_callback' => '__return_true',
     ]);
 
@@ -165,6 +173,12 @@ function bdp_api_helper_list_regions( WP_REST_Request $request ) {
 function bdp_api_helper_list_categories( WP_REST_Request $request ) {
     global $category_lookup;
     return rest_ensure_response( $category_lookup );
+}
+
+// Endpoint "list tags" callback function
+function bdp_api_helper_list_tags( WP_REST_Request $request ) {
+    global $tag_lookup;
+    return rest_ensure_response( $tag_lookup );
 }
 
 // Validation: only known meta fields allowed in REST calls
@@ -313,6 +327,49 @@ function bdp_api_helper_validate_category_fields($params) {
     return $params;
 }
 
+function bdp_api_helper_validate_tag_fields($params) {
+    if (!isset($params['wpbdp_tags'])) {
+        return $params;
+    }
+
+    // Handle both array and JSON string input
+    $tags = $params['wpbdp_tags'];
+    if (is_string($tags)) {
+        $tags = json_decode($tags, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return new WP_Error(
+                'invalid_tags',
+                'Tags string must be a valid JSON array string',
+                array('status' => 400)
+            );
+        }
+    }
+
+    if (!is_array($tags)) {
+        return new WP_Error(
+            'invalid_tags',
+            'Tags array must be a valid array',
+            array('status' => 400)
+        );
+    }
+
+    $valid_tags = array();
+    foreach ($tags as $tag) {
+        $term_id = bdp_api_helper_find_tag_term_id($tag);
+        if ($term_id === null) {
+            return new WP_Error(
+                'invalid_tag',
+                "Tag '{$tag}' does not exist",
+                array('status' => 400)
+            );
+        }
+        $valid_tags[] = $term_id;
+    }
+
+    $params['wpbdp_tags'] = $valid_tags;
+    return $params;
+}
+
 function bdp_api_helper_create_listing( $request ) {
     error_log("BDP API Helper: create: " . json_encode($request->get_params()));
 
@@ -364,6 +421,12 @@ function bdp_api_helper_create_listing( $request ) {
 
     // Then validate category fields
     $params = bdp_api_helper_validate_category_fields($params);
+    if (is_wp_error($params)) {
+        return $params;
+    }
+
+    // Validate tags
+    $params = bdp_api_helper_validate_tag_fields($params);
     if (is_wp_error($params)) {
         return $params;
     }
@@ -423,6 +486,19 @@ function bdp_api_helper_create_listing( $request ) {
         }
     }
 
+    // Update tags
+    if (!empty($clean_params['wpbdp_tags'])) {
+        $update_result = wp_set_object_terms($post_id, $clean_params['wpbdp_tags'], TAG_TAXONOMY);
+        if (is_wp_error($update_result)) {
+            error_log("bdp-api-helper: Failed to set tags for post {$post_id}. Error: " . json_encode($update_result->get_error_messages()));
+            return new WP_Error(
+                'tag_update_failed',
+                'Failed to update tags',
+                array('status' => 500)
+            );
+        }
+    }
+
     error_log("BDP API Helper: Created listing ID {$post_id}");
 
     return rest_ensure_response( array(
@@ -452,6 +528,10 @@ function bdp_api_helper_update_listing( $request ) {
         return $params;
     }
     $params = bdp_api_helper_validate_category_fields($params);
+    if (is_wp_error($params)) {
+        return $params;
+    }
+    $params = bdp_api_helper_validate_tag_fields($params);
     if (is_wp_error($params)) {
         return $params;
     }
@@ -545,6 +625,19 @@ function bdp_api_helper_update_listing( $request ) {
         );
     }
 
+    // Update tags if provided
+    if (!empty($clean_params['wpbdp_tags'])) {
+        $update_result = wp_set_object_terms($post_id, $clean_params['wpbdp_tags'], TAG_TAXONOMY);
+        if (is_wp_error($update_result)) {
+            error_log("bdp-api-helper: Failed to set tags for post {$post_id}. Error: " . json_encode($update_result->get_error_messages()));
+            return new WP_Error(
+                'tag_update_failed',
+                'Failed to update tags',
+                array('status' => 500)
+            );
+        }
+    }
+
     return rest_ensure_response( array(
         'success' => true,
         'post_id' => $post_id,
@@ -586,6 +679,15 @@ function bdp_api_helper_get_dynamic_args( $operation ) {
 
         // BDP category fields
         'wpbdp_categories' => array(
+            'required' => false,
+            'type' => 'array',
+            'items' => array(
+                'type' => 'string'
+            ),
+        ),
+
+        // BDP tag fields
+        'wpbdp_tags' => array(
             'required' => false,
             'type' => 'array',
             'items' => array(
@@ -795,5 +897,41 @@ function preload_categories_lookup_data() {
 function find_category_term_id($incoming_category_name) {
     global $category_lookup;
     return $category_lookup[strtolower(trim($incoming_category_name))] ?? null;
+}
+
+// cache tags in a global so we can look them up without multiple DB hits
+function preload_tags_lookup_data() {
+    // get the bdp tag terms
+    $terms = get_terms(array(
+        'taxonomy' => TAG_TAXONOMY,
+        'hide_empty' => false,
+        'fields' => 'all',
+    ));
+
+    if ( is_wp_error($terms) ) {
+        error_log("bdp-api-helper: Failed to load tags taxonomy. Error: " . json_encode($terms->get_error_messages()));
+        return array(); // Return empty array so downstream logic doesn't break
+    }
+
+    // populate the terms lookup array
+    $lookup = array();
+    foreach ( $terms as $term ) {
+        $enabled = get_term_meta( $term->term_id, 'enabled', true );
+        // skip disabled tag terms
+        if( $enabled === '0' ) {
+            continue;
+        }
+
+        $lookup[ strtolower( $term->name ) ] = $term->term_id;
+    }
+
+    error_log("bdp-api-helper: preloaded " . count($lookup) . " bdp tag terms");
+    return $lookup;
+}
+
+// lookup tag by name to confirm it exists
+function bdp_api_helper_find_tag_term_id($incoming_tag_name) {
+    global $tag_lookup;
+    return $tag_lookup[strtolower(trim($incoming_tag_name))] ?? null;
 }
 
