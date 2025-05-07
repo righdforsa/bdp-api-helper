@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.25
+ * Version: 1.1.26
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -264,12 +264,29 @@ function bdp_api_helper_validate_region_fields($params) {
 }
 
 function bdp_api_helper_validate_category_fields($params) {
-    if (!isset($params['wpbdp_categories']) || !is_array($params['wpbdp_categories'])) {
+    if (!isset($params['wpbdp_categories'])) {
         return $params;
     }
 
+    // Handle string-encoded array for categories
+    $categories = $params['wpbdp_categories'];
+    if (is_string($categories)) {
+        $decoded = json_decode($categories, true);
+        if (is_array($decoded)) {
+            $categories = $decoded;
+        } else {
+            // If it's not a valid JSON array, treat it as a single category
+            $categories = array($categories);
+        }
+    } else if (!is_array($categories)) {
+        return new WP_Error('invalid_categories', 'Categories must be an array or JSON string.', array('status' => 400));
+    }
+
     $valid_categories = array();
-    foreach ($params['wpbdp_categories'] as $category) {
+    foreach ($categories as $category) {
+        if (empty($category)) {
+            continue; // Skip empty categories
+        }
         $term_id = bdp_api_helper_find_category_term_id($category);
         if ($term_id === null) {
             error_log("BDP API Helper: Unknown category value: {$category}");
