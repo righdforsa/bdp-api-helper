@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.32
+ * Version: 1.1.33
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -488,6 +488,7 @@ function bdp_api_helper_create_listing( $request ) {
 
     // Update tags
     if (!empty($clean_params['wpbdp_tags'])) {
+        error_log("bdp-api-helper: Updating tags for post {$post_id} with values: " . json_encode($clean_params['wpbdp_tags']));
         $update_result = wp_set_object_terms($post_id, $clean_params['wpbdp_tags'], TAG_TAXONOMY);
         if (is_wp_error($update_result)) {
             error_log("bdp-api-helper: Failed to set tags for post {$post_id}. Error: " . json_encode($update_result->get_error_messages()));
@@ -497,6 +498,16 @@ function bdp_api_helper_create_listing( $request ) {
                 array('status' => 500)
             );
         }
+        
+        error_log("bdp-api-helper: Successfully updated tags for post {$post_id}");
+        // Add tag updates to the response
+        array_push(
+            $updates,
+            array(
+                'field_updated' => 'wpbdp_tags',
+                'new_value' => $clean_params['wpbdp_tags']
+            )
+        );
     }
 
     error_log("BDP API Helper: Created listing ID {$post_id}");
@@ -627,6 +638,7 @@ function bdp_api_helper_update_listing( $request ) {
 
     // Update tags if provided
     if (!empty($clean_params['wpbdp_tags'])) {
+        error_log("bdp-api-helper: Updating tags for post {$post_id} with values: " . json_encode($clean_params['wpbdp_tags']));
         $update_result = wp_set_object_terms($post_id, $clean_params['wpbdp_tags'], TAG_TAXONOMY);
         if (is_wp_error($update_result)) {
             error_log("bdp-api-helper: Failed to set tags for post {$post_id}. Error: " . json_encode($update_result->get_error_messages()));
@@ -636,6 +648,16 @@ function bdp_api_helper_update_listing( $request ) {
                 array('status' => 500)
             );
         }
+        
+        error_log("bdp-api-helper: Successfully updated tags for post {$post_id}");
+        // Add tag updates to the response
+        array_push(
+            $updates,
+            array(
+                'field_updated' => 'wpbdp_tags',
+                'new_value' => $clean_params['wpbdp_tags']
+            )
+        );
     }
 
     return rest_ensure_response( array(
