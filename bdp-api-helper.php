@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.33
+ * Version: 1.1.34
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -15,9 +15,9 @@ const CATEGORY_TAXONOMY = 'wpbdp_category';
 const TAG_TAXONOMY = 'wpbdp_tag';
 
 // Field type constants
-const SYSTEM_FIELDS = array('id', 'title', 'status');
+const SYSTEM_FIELDS = array('id', 'title', 'status', 'featured_image');
 const TAXONOMY_FIELDS = array('wpbdp_categories', 'wpbdp_tags');
-const SKIP_FIELDS = array('id', 'title', 'status', 'country', 'state', 'city', 'wpbdp_categories', 'wpbdp_tags');
+const SKIP_FIELDS = array('id', 'title', 'status', 'featured_image', 'country', 'state', 'city', 'wpbdp_categories', 'wpbdp_tags');
 
 $region_lookup = null;
 $category_lookup = null;
@@ -441,8 +441,33 @@ function bdp_api_helper_create_listing( $request ) {
         return new WP_Error( 'insert_failed', 'Failed to create BDP listing.', array( 'status' => 500 ) );
     }
 
-    $skip_keys = array( 'id', 'title', 'status', 'wpbdp_categories', 'wpbdp_tags' );
+    $skip_keys = SKIP_FIELDS;
     $region_updates = array();
+    $updates = array();
+
+    // Handle featured image if provided
+    if (isset($clean_params['featured_image'])) {
+        $image_id = intval($clean_params['featured_image']);
+        // Verify the image exists
+        if (!get_post($image_id)) {
+            error_log("BDP API Helper: Featured image ID {$image_id} not found");
+            return new WP_Error('invalid_image', "Featured image ID {$image_id} not found.", array('status' => 400));
+        }
+        
+        $update_result = set_post_thumbnail($post_id, $image_id);
+        if ($update_result === false) {
+            error_log("BDP API Helper: Failed to set featured image for post ID {$post_id}");
+            return new WP_Error('update_failed', "Failed to set featured image.", array('status' => 500));
+        }
+        
+        array_push(
+            $updates,
+            array(
+                'field_updated' => 'featured_image',
+                'new_value' => $image_id
+            )
+        );
+    }
 
     // Save all valid BDP fields as post meta
     foreach ( $clean_params as $key => $value ) {
@@ -551,6 +576,33 @@ function bdp_api_helper_update_listing( $request ) {
     $skip_keys = array( 'id', 'title', 'status', 'wpbdp_categories', 'wpbdp_tags' );
     $updates = array();
     $region_updates = array();
+
+    // Handle featured image update if provided
+    if (isset($clean_params['featured_image'])) {
+        $image_id = intval($clean_params['featured_image']);
+        // Verify the image exists
+        if (!get_post($image_id)) {
+            error_log("BDP API Helper: Featured image ID {$image_id} not found");
+            return new WP_Error('invalid_image', "Featured image ID {$image_id} not found.", array('status' => 400));
+        }
+        
+        $current_image_id = get_post_thumbnail_id($post_id);
+        if ($current_image_id != $image_id) {
+            $update_result = set_post_thumbnail($post_id, $image_id);
+            if ($update_result === false) {
+                error_log("BDP API Helper: Failed to update featured image for post ID {$post_id}");
+                return new WP_Error('update_failed', "Failed to update featured image.", array('status' => 500));
+            }
+            
+            array_push(
+                $updates,
+                array(
+                    'field_updated' => 'featured_image',
+                    'new_value' => $image_id
+                )
+            );
+        }
+    }
 
     // Update the postmeta
     foreach ( $clean_params as $key => $value ) {
@@ -683,6 +735,11 @@ function bdp_api_helper_get_dynamic_args( $operation ) {
         'status' => array(
             'required' => false,
             'type'     => 'string',
+        ),
+        'featured_image' => array(
+            'required' => false,
+            'type'     => 'integer',
+            'validate_callback' => 'is_numeric',
         ),
 
         // BDP region fields
