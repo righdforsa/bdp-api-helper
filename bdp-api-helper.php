@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.37
+ * Version: 1.1.38
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -253,8 +253,10 @@ function bdp_api_helper_sanitize_meta_fields($params) {
         if(in_array($key, $url_type_fields)) {
             if ( is_string( $value ) ) {
                 $decoded = json_decode( $value, true );
-                if ( is_array( $decoded ) ) {
+                if ( json_last_error() === JSON_ERROR_NONE && is_array( $decoded ) ) {
                     $params[$key] = $decoded;
+                } else {
+                    error_log("BDP API Helper: Failed to decode JSON string for URL field '{$key}' (value: '{$value}'). JSON error: " . json_last_error_msg());
                 }
             }
         }
