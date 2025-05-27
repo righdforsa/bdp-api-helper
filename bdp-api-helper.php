@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.36
+ * Version: 1.1.37
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -441,9 +441,41 @@ function bdp_api_helper_create_listing( $request ) {
         return new WP_Error( 'insert_failed', 'Failed to create BDP listing.', array( 'status' => 500 ) );
     }
 
-    $skip_keys = SKIP_FIELDS;
     $region_updates = array();
     $updates = array();
+
+    // Save all valid BDP fields as post meta
+    foreach ( $clean_params as $key => $value ) {
+        // Skip empty values
+        if ( empty($value) && !is_numeric($value) ) { // Allow '0' but not empty strings
+            continue;
+        }
+
+        // Collect region updates, which we've already validated
+        if(in_array( $key, REGION_KEYS, true )) {
+            $region_id = bdp_api_helper_find_region_term_id($value);
+            if ($region_id == null) {
+                error_log("BDP API Helper: Unknown region value during creation: {$key} {$value}");
+                return new WP_Error( 'invalid_region', "{$key} region {$value} not found.", array( 'status' => 400 ) );
+            }
+            $region_updates[$key] = $region_id;
+            continue;
+        }
+
+        // Skip system fields and other not-"postmeta" fields
+        if (in_array($key, SKIP_FIELDS, true)) {
+            continue;
+        }
+
+        // prepare the current postmeta field and update the listing record
+        $field_id = bdp_api_helper_get_field_id_by_shortname( $key );
+        $meta_key = "_wpbdp[fields][{$field_id}]";
+        $update_result = update_post_meta( $post_id, $meta_key, $value );
+        if( $update_result === false ) {
+            error_log( "BDP API Helper: Failed to insert meta field {$field_key} for post ID {$post_id}" );
+            return new WP_Error( 'update_failed', "Failed to insert meta field {$field_key}.", array( 'status' => 500 ) );
+        }
+    }
 
     // Handle featured image if provided
     if (isset($clean_params['featured_image'])) {
@@ -467,30 +499,6 @@ function bdp_api_helper_create_listing( $request ) {
                 'new_value' => $image_id
             )
         );
-    }
-
-    // Save all valid BDP fields as post meta
-    foreach ( $clean_params as $key => $value ) {
-        // Skip system fields, and empty values
-        if ( in_array( $key, $skip_keys, true ) || empty($value) ) {
-            continue;
-        }
-
-        // Collect region updates, which we've already validated
-        if(in_array( $key, REGION_KEYS, true )) {
-            $region_id = bdp_api_helper_find_region_term_id($value);
-            $region_updates[$key] = $region_id;
-            continue;
-        }
-
-        // prepare the field and insert
-        $field_id = bdp_api_helper_get_field_id_by_shortname( $key );
-        $meta_key = "_wpbdp[fields][{$field_id}]";
-        $update_result = update_post_meta( $post_id, $meta_key, $value );
-        if( $update_result === false ) {
-            error_log( "BDP API Helper: Failed to insert meta field {$field_key} for post ID {$post_id}" );
-            return new WP_Error( 'update_failed', "Failed to insert meta field {$field_key}.", array( 'status' => 500 ) );
-        }
     }
 
     // Update regions
@@ -577,48 +585,31 @@ function bdp_api_helper_update_listing( $request ) {
     $updates = array();
     $region_updates = array();
 
-    // Handle featured image update if provided
-    if (isset($clean_params['featured_image'])) {
-        $image_id = intval($clean_params['featured_image']);
-        // Verify the image exists
-        if (!get_post($image_id)) {
-            error_log("BDP API Helper: Featured image ID {$image_id} not found");
-            return new WP_Error('invalid_image', "Featured image ID {$image_id} not found.", array('status' => 400));
-        }
-        
-        $current_image_id = get_post_thumbnail_id($post_id);
-        if ($current_image_id != $image_id) {
-            $update_result = set_post_thumbnail($post_id, $image_id);
-            if ($update_result === false) {
-                error_log("BDP API Helper: Failed to update featured image for post ID {$post_id}");
-                return new WP_Error('update_failed', "Failed to update featured image.", array('status' => 500));
-            }
-            
-            array_push(
-                $updates,
-                array(
-                    'field_updated' => 'featured_image',
-                    'new_value' => $image_id
-                )
-            );
-        }
-    }
-
-    // Update the postmeta
+    // Process all other parameters
     foreach ( $clean_params as $key => $value ) {
-        // Skip system fields and empty values
-        if(in_array( $key, $skip_keys, true ) || empty($value)) {
+        // Always skip empty values first, unless it's a specific field that allows empty to clear (not the case here for iteration)
+        if (empty($value) && !is_numeric($value)) { // Allow '0' but not empty strings
             continue;
         }
 
         // Collect region updates, which we've already validated
         if(in_array( $key, REGION_KEYS, true )) {
             $region_id = bdp_api_helper_find_region_term_id($value);
+            if ($region_id == null) { // is this possible? isn't that what validation does?
+                error_log("BDP API Helper: Unknown region value during update: {$key} {$value}");
+                return new WP_Error( 'invalid_region', "{$key} region {$value} not found.", array( 'status' => 400 ) );
+            }
             $region_updates[$key] = $region_id;
+            continue; // Processed region, skip other handlers for this key
+        }
+
+        // Skip system fields and other not-"postmeta" fields
+        if (in_array($key, SKIP_FIELDS, true)) {
             continue;
         }
 
-        // Handle meta fields, which we've already validated
+        // If we reach here, it's a custom BDP meta field.
+        // Handle meta fields, which we've already validated (association='meta')
         $field_id = bdp_api_helper_get_field_id_by_shortname($key);
         if($field_id === null) {
             error_log("BDP API Helper: Unknown field id for previously validated field: {$key} {$value}");
@@ -650,6 +641,35 @@ function bdp_api_helper_update_listing( $request ) {
         }
     }
 
+    // Finished the processing loop, now perform the updates that we've collected
+
+    // Handle featured image update if provided
+    if (isset($clean_params['featured_image'])) {
+        $image_id = intval($clean_params['featured_image']);
+        // Verify the image exists
+        if (!get_post($image_id)) {
+            error_log("BDP API Helper: Featured image ID {$image_id} not found");
+            return new WP_Error('invalid_image', "Featured image ID {$image_id} not found.", array('status' => 400));
+        }
+            
+        $current_image_id = get_post_thumbnail_id($post_id);
+        if ($current_image_id != $image_id) {
+            $update_result = set_post_thumbnail($post_id, $image_id);
+            if ($update_result === false) {
+                error_log("BDP API Helper: Failed to update featured image for post ID {$post_id}");
+                return new WP_Error('update_failed', "Failed to update featured image.", array('status' => 500));
+            }
+                
+            array_push(
+                $updates,
+                array(
+                    'field_updated' => 'featured_image',
+                    'new_value' => $image_id
+                )
+            );
+        }
+    }
+    
     // Update regions if we have any
     if (!empty($region_updates)) {
         $update_result = wp_set_object_terms($post_id, array_values($region_updates), 'wpbdm-region');
