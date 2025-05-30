@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.38
+ * Version: 1.1.39
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -225,13 +225,8 @@ function bdp_api_helper_sanitize_meta_fields($params) {
             return new WP_Error( 'invalid_field', "Field '{$key}' not found.", array( 'status' => 400 ) );
         }
 
-        // hack for data correction for URL type fields, which can't
-        // seem to come in from a POST as request params with array
-        // index notation, due to tripping the security module, so
-        // they are being sent as string encoded arrays
-
         // get a list of known fields that have a type "url"
-        $url_type_fields = array(function() {
+        $url_type_fields = function() {
             $form_fields = get_option( 'bdp_api_helper_registered_fields', array() );
             $selected_fields = array();
             foreach ( $form_fields as $field ) {
@@ -240,20 +235,23 @@ function bdp_api_helper_sanitize_meta_fields($params) {
                 }
 
                 if ($field['field_type'] == 'url') {
-                    $selected_fields.push($field['shortname']);
+                    $selected_fields[] = $field['shortname']; // Correct PHP array syntax
                 }
             }
             error_log("debug bpd-api-helper: URL type selected_fields" . json_encode($selected_fields, true));
             return $selected_fields;
-        });
+        };
+        $url_type_fields = $url_type_fields(); // Call the function to get the array
 
         // if the current field is in the url_type array, make sure to
         // unpack the string into an array so it will insert correctly
-        error_log("debug: bdp-api-helper: testing url_type_fields " . json_encode($url_type_fields) . " for key {$key}");
-        if(in_array($key, $url_type_fields)) {
+        error_log("BDP API Helper: Processing field {$key} with value: " . substr($value, 0, 100) . (strlen($value) > 100 ? '...' : ''));
+        if(in_array($key, $url_type_fields, true)) {
+            error_log("BDP API Helper: Field {$key} is a URL type field");
             if ( is_string( $value ) ) {
                 $decoded = json_decode( $value, true );
                 if ( json_last_error() === JSON_ERROR_NONE && is_array( $decoded ) ) {
+                    error_log("BDP API Helper: Successfully decoded URL array for {$key}: " . json_encode($decoded));
                     $params[$key] = $decoded;
                 } else {
                     error_log("BDP API Helper: Failed to decode JSON string for URL field '{$key}' (value: '{$value}'). JSON error: " . json_last_error_msg());
@@ -294,27 +292,34 @@ function bdp_api_helper_validate_region_fields($params) {
 }
 
 function bdp_api_helper_validate_category_fields($params) {
+    error_log("BDP API Helper: Validating categories with params: " . json_encode($params));
     if (!isset($params['wpbdp_categories'])) {
+        error_log("BDP API Helper: No categories provided in request");
         return $params;
     }
 
     // Handle string-encoded array for categories
     $categories = $params['wpbdp_categories'];
     if (is_string($categories)) {
+        error_log("BDP API Helper: Categories provided as string: " . $categories);
         $decoded = json_decode($categories, true);
         if (is_array($decoded)) {
             $categories = $decoded;
+            error_log("BDP API Helper: Successfully decoded categories array: " . json_encode($categories));
         } else {
             // If it's not a valid JSON array, treat it as a single category
+            error_log("BDP API Helper: Categories string is not valid JSON, treating as single category");
             $categories = array($categories);
         }
     } else if (!is_array($categories)) {
+        error_log("BDP API Helper: Categories is neither string nor array: " . gettype($categories));
         return new WP_Error('invalid_categories', 'Categories must be an array or JSON string.', array('status' => 400));
     }
 
     $valid_categories = array();
     foreach ($categories as $category) {
         if (empty($category)) {
+            error_log("BDP API Helper: Skipping empty category");
             continue; // Skip empty categories
         }
         $term_id = bdp_api_helper_find_category_term_id($category);
@@ -323,9 +328,11 @@ function bdp_api_helper_validate_category_fields($params) {
             return new WP_Error('invalid_category', "Category '{$category}' not found.", array('status' => 400));
         }
         $valid_categories[] = $term_id;
+        error_log("BDP API Helper: Found valid category ID {$term_id} for '{$category}'");
     }
 
     $params['wpbdp_categories'] = $valid_categories;
+    error_log("BDP API Helper: Final validated categories: " . json_encode($valid_categories));
     return $params;
 }
 
