@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.39
+ * Version: 1.1.40
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -245,7 +245,7 @@ function bdp_api_helper_sanitize_meta_fields($params) {
 
         // if the current field is in the url_type array, make sure to
         // unpack the string into an array so it will insert correctly
-        error_log("BDP API Helper: Processing field {$key} with value: " . substr($value, 0, 100) . (strlen($value) > 100 ? '...' : ''));
+        error_log("BDP API Helper: Processing field {$key} with value: " . json_encode($value, true));
         if(in_array($key, $url_type_fields, true)) {
             error_log("BDP API Helper: Field {$key} is a URL type field");
             if ( is_string( $value ) ) {
