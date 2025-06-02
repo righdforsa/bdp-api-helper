@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.43
+ * Version: 1.1.44
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -684,7 +684,8 @@ function bdp_api_helper_update_listing( $request ) {
         $current_bdp_images = get_post_meta($post_id, '_wpbdp[images]', true);
         error_log("BDP API Helper: Current BDP images meta for post {$post_id}: " . json_encode($current_bdp_images));
 
-        if ($current_image_id != $image_id || !in_array($image_id, (array)$current_bdp_images)) {
+        // Update WP featured image if needed
+        if ($current_image_id != $image_id)) {
             error_log("BDP API Helper: Updating featured image from {$current_image_id} to {$image_id}");
             $update_result = set_post_thumbnail($post_id, $image_id);
             if ($update_result === false) {
@@ -692,34 +693,31 @@ function bdp_api_helper_update_listing( $request ) {
                 return new WP_Error('update_failed', "Failed to update featured image.", array('status' => 500));
             }
             error_log("BDP API Helper: Successfully set featured image {$image_id} for post {$post_id}");
-            
-            // Also set the BDP-specific images meta
+        } else {
+            error_log("BDP API Helper: Featured image {$image_id} already set for post {$post_id}");
+        }
+
+        // Also, update BDP images meta if needed
+        if (!in_array($image_id, (array)$current_bdp_images)) {
             $bdp_images = array($image_id);
             $bdp_update_result = update_post_meta($post_id, '_wpbdp[images]', $bdp_images);
             if ($bdp_update_result === false) {
                 error_log("BDP API Helper: Failed to update BDP images meta for post {$post_id}");
                 return new WP_Error('update_failed', "Failed to update BDP images meta.", array('status' => 500));
             }
-            error_log("BDP API Helper: Set BDP images meta for post {$post_id}: " . json_encode($bdp_images));
-            
-            // Verify the image was actually attached
-            $verify_image_id = get_post_thumbnail_id($post_id);
-            if ($verify_image_id != $image_id) {
-                error_log("BDP API Helper: WARNING - Featured image verification failed. Expected {$image_id}, got {$verify_image_id}");
-            } else {
-                error_log("BDP API Helper: Verified featured image {$image_id} is correctly attached to post {$post_id}");
-            }
-            
-            array_push(
-                $updates,
-                array(
-                    'field_updated' => 'featured_image',
-                    'new_value' => $image_id
-                )
-            );
+            error_log("BDP API Helper: Set BDP images meta for post {$post_id}: " . json_encode($bdp_images));   
         } else {
-            error_log("BDP API Helper: Featured image {$image_id} already set for post {$post_id}");
+            error_log("BDP API Helper: BDP images meta {$image_id} already set for post {$post_id}");
         }
+
+        array_push(
+            $updates,
+            array(
+                'field_updated' => 'featured_image',
+                'new_value' => $image_id
+            )
+        );
+        
     }
     
     // Update regions if we have any
