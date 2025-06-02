@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.44
+ * Version: 1.1.45
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -685,7 +685,7 @@ function bdp_api_helper_update_listing( $request ) {
         error_log("BDP API Helper: Current BDP images meta for post {$post_id}: " . json_encode($current_bdp_images));
 
         // Update WP featured image if needed
-        if ($current_image_id != $image_id)) {
+        if ($current_image_id != $image_id) {
             error_log("BDP API Helper: Updating featured image from {$current_image_id} to {$image_id}");
             $update_result = set_post_thumbnail($post_id, $image_id);
             if ($update_result === false) {
