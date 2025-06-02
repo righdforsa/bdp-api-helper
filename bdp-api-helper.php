@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.41
+ * Version: 1.1.42
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -501,6 +501,11 @@ function bdp_api_helper_create_listing( $request ) {
             return new WP_Error('update_failed', "Failed to set featured image.", array('status' => 500));
         }
         
+        // Also set the BDP-specific images meta
+        $bdp_images = array($image_id);
+        update_post_meta($post_id, '_wpbdp[images]', $bdp_images);
+        error_log("BDP API Helper: Set BDP images meta for post {$post_id}: " . json_encode($bdp_images));
+        
         // Verify the image was actually attached
         $verify_image_id = get_post_thumbnail_id($post_id);
         if ($verify_image_id != $image_id) {
@@ -671,12 +676,6 @@ function bdp_api_helper_update_listing( $request ) {
             error_log("BDP API Helper: Featured image ID {$image_id} not found");
             return new WP_Error('invalid_image', "Featured image ID {$image_id} not found.", array('status' => 400));
         }
-        error_log("BDP API Helper: Found image post: " . json_encode(array(
-            'ID' => $image_post->ID,
-            'post_type' => $image_post->post_type,
-            'post_mime_type' => $image_post->post_mime_type,
-            'guid' => $image_post->guid
-        )));
         
         $current_image_id = get_post_thumbnail_id($post_id);
         error_log("BDP API Helper: Current featured image ID for post {$post_id}: " . ($current_image_id ? $current_image_id : 'none'));
@@ -689,6 +688,11 @@ function bdp_api_helper_update_listing( $request ) {
                 return new WP_Error('update_failed', "Failed to update featured image.", array('status' => 500));
             }
             error_log("BDP API Helper: Successfully set featured image {$image_id} for post {$post_id}");
+            
+            // Also set the BDP-specific images meta
+            $bdp_images = array($image_id);
+            update_post_meta($post_id, '_wpbdp[images]', $bdp_images);
+            error_log("BDP API Helper: Set BDP images meta for post {$post_id}: " . json_encode($bdp_images));
             
             // Verify the image was actually attached
             $verify_image_id = get_post_thumbnail_id($post_id);
