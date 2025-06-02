@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BDP API Helper
  * Description: Dynamically exposes BDP (Business Directory Plugin) fields for REST API usage and validates meta field updates.
- * Version: 1.1.40
+ * Version: 1.1.41
  * Author: Christopher Peters
  * License: MIT
  * Text Domain: bdp-api-helper
@@ -501,6 +501,14 @@ function bdp_api_helper_create_listing( $request ) {
             return new WP_Error('update_failed', "Failed to set featured image.", array('status' => 500));
         }
         
+        // Verify the image was actually attached
+        $verify_image_id = get_post_thumbnail_id($post_id);
+        if ($verify_image_id != $image_id) {
+            error_log("BDP API Helper: WARNING - Featured image verification failed. Expected {$image_id}, got {$verify_image_id}");
+        } else {
+            error_log("BDP API Helper: Verified featured image {$image_id} is correctly attached to post {$post_id}");
+        }
+        
         array_push(
             $updates,
             array(
@@ -655,20 +663,41 @@ function bdp_api_helper_update_listing( $request ) {
     // Handle featured image update if provided
     if (isset($clean_params['featured_image'])) {
         $image_id = intval($clean_params['featured_image']);
+        error_log("BDP API Helper: Attempting to set featured image {$image_id} for post {$post_id}");
+        
         // Verify the image exists
-        if (!get_post($image_id)) {
+        $image_post = get_post($image_id);
+        if (!$image_post) {
             error_log("BDP API Helper: Featured image ID {$image_id} not found");
             return new WP_Error('invalid_image', "Featured image ID {$image_id} not found.", array('status' => 400));
         }
-            
+        error_log("BDP API Helper: Found image post: " . json_encode(array(
+            'ID' => $image_post->ID,
+            'post_type' => $image_post->post_type,
+            'post_mime_type' => $image_post->post_mime_type,
+            'guid' => $image_post->guid
+        )));
+        
         $current_image_id = get_post_thumbnail_id($post_id);
+        error_log("BDP API Helper: Current featured image ID for post {$post_id}: " . ($current_image_id ? $current_image_id : 'none'));
+        
         if ($current_image_id != $image_id) {
+            error_log("BDP API Helper: Updating featured image from {$current_image_id} to {$image_id}");
             $update_result = set_post_thumbnail($post_id, $image_id);
             if ($update_result === false) {
                 error_log("BDP API Helper: Failed to update featured image for post ID {$post_id}");
                 return new WP_Error('update_failed', "Failed to update featured image.", array('status' => 500));
             }
-                
+            error_log("BDP API Helper: Successfully set featured image {$image_id} for post {$post_id}");
+            
+            // Verify the image was actually attached
+            $verify_image_id = get_post_thumbnail_id($post_id);
+            if ($verify_image_id != $image_id) {
+                error_log("BDP API Helper: WARNING - Featured image verification failed. Expected {$image_id}, got {$verify_image_id}");
+            } else {
+                error_log("BDP API Helper: Verified featured image {$image_id} is correctly attached to post {$post_id}");
+            }
+            
             array_push(
                 $updates,
                 array(
@@ -676,6 +705,8 @@ function bdp_api_helper_update_listing( $request ) {
                     'new_value' => $image_id
                 )
             );
+        } else {
+            error_log("BDP API Helper: Featured image {$image_id} already set for post {$post_id}");
         }
     }
     
